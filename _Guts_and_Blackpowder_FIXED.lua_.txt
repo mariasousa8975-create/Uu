@@ -1,0 +1,487 @@
+local ver = "Version: 1.0.1 - Fixed"
+
+-- Services
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+local UserInputService = game:GetService("UserInputService")
+
+local LocalPlayer = Players.LocalPlayer
+local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+
+-- Rayfield
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+local Window = Rayfield:CreateWindow({
+    Name = "Guts & Blackpowder | PolleserHub dsc.gg/polleserhub",
+    Icon = "star",
+    LoadingTitle = "Guts & Blackpowder | PolleserHub",
+    LoadingSubtitle = "by Polleser",
+    Theme = "Ocean",
+    DisableRayfieldPrompts = false,
+    DisableBuildWarnings = false,
+    ConfigurationSaving = {
+        Enabled = true,
+        FolderName = "PolleserHub",
+        FileName = "Guts_and_Blackpowder"
+    },
+    Discord = {
+        Enabled = true,
+        Invite = "9yAtRgpsua",
+        RememberJoins = true
+    },
+    KeySystem = false
+})
+
+local MainTab = Window:CreateTab("Main", 4483362458)
+local EspTab = Window:CreateTab("Esp", 4483362458)
+local AutoTab = Window:CreateTab("Auto", 4483362458)
+local AntiTab = Window:CreateTab("Anti", 4483362458)
+
+-- ============= VARIÁVEIS GLOBAIS SEGURAS =============
+local killAuraEnabled = false
+local killAuraEnabled2 = false
+local headshotEnabled = false
+local noclipConnection
+local autoFarmActive = false
+local allConnections = {}
+
+-- Função para limpar conexões
+local function addConnection(conn)
+    table.insert(allConnections, conn)
+    return conn
+end
+
+local function cleanupConnections()
+    for _, conn in ipairs(allConnections) do
+        if conn and conn.Connected then
+            pcall(function() conn:Disconnect() end)
+        end
+    end
+    allConnections = {}
+end
+
+-- ============= WEAPON MANAGEMENT =============
+local selectedWeapon = ""
+
+local function getWeaponList()
+    local list = {"LOAD IN GAME"}
+    pcall(function()
+        local backpack = LocalPlayer:FindFirstChild("Backpack")
+        if backpack then
+            for _, tool in ipairs(backpack:GetChildren()) do
+                if tool:IsA("Tool") then
+                    table.insert(list, tool.Name)
+                end
+            end
+        end
+    end)
+    return list
+end
+
+local function equipWeapon(weaponName)
+    if weaponName == "" or not weaponName then return end
+    
+    pcall(function()
+        local char = LocalPlayer.Character
+        if not char then return end
+        
+        local humanoid = char:FindFirstChildOfClass("Humanoid")
+        if not humanoid then return end
+        
+        local backpack = LocalPlayer:FindFirstChild("Backpack")
+        if not backpack then return end
+        
+        local tool = char:FindFirstChild(weaponName) or backpack:FindFirstChild(weaponName)
+        if tool and tool:IsA("Tool") then
+            humanoid:EquipTool(tool)
+        end
+    end)
+end
+
+local Section1 = MainTab:CreateSection("Auto Equip (Beta)")
+local WeaponDropdown = MainTab:CreateDropdown({
+    Name = "Select Weapon",
+    Options = getWeaponList(),
+    CurrentOption = "LOAD IN GAME",
+    Callback = function(v)
+        selectedWeapon = (v == "LOAD IN GAME") and "" or v
+    end
+})
+
+-- Update weapon list periodicamente
+addConnection(task.spawn(function()
+    while true do
+        task.wait(2)
+        pcall(function()
+            if WeaponDropdown then
+                WeaponDropdown:UpdateOptions(getWeaponList())
+            end
+        end)
+    end
+end))
+
+-- ============= AUTO FARM V2 =============
+local function getMeleeTool()
+    pcall(function()
+        local char = LocalPlayer.Character
+        if char then
+            for _, item in pairs(char:GetChildren()) do
+                if item:IsA("Tool") and item:FindFirstChild("RemoteEvent") then
+                    return item
+                end
+            end
+        end
+    end)
+    return nil
+end
+
+local function getClosestZombie(maxDistance)
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root then return nil end
+    
+    local zombiesFolder = Workspace:FindFirstChild("Zombies")
+    if not zombiesFolder then return nil end
+    
+    local closest = nil
+    local shortestDist = maxDistance or 9999
+    
+    for _, zombie in ipairs(zombiesFolder:GetChildren()) do
+        local hum = zombie:FindFirstChildOfClass("Humanoid")
+        local targetPart = zombie:FindFirstChild("Head") or zombie:FindFirstChild("HumanoidRootPart")
+        
+        if hum and targetPart and hum.Health > 0 then
+            local dist = (root.Position - targetPart.Position).Magnitude
+            if dist < shortestDist then
+                shortestDist = dist
+                closest = zombie
+            end
+        end
+    end
+    
+    return closest
+end
+
+local Section = AutoTab:CreateSection("Auto Farm")
+
+addConnection(AutoTab:CreateToggle({
+    Name = "Kill Aura (Smart Focus)",
+    CurrentValue = false,
+    Callback = function(value)
+        killAuraEnabled = value
+    end
+}))
+
+-- Kill Aura Loop - OTIMIZADO
+addConnection(RunService.Heartbeat:Connect(function()
+    if not killAuraEnabled then return end
+    
+    pcall(function()
+        local char = LocalPlayer.Character
+        if not char then return end
+        
+        local tool = getMeleeTool()
+        if not tool then return end
+        
+        local target = getClosestZombie(19)
+        if not target then return end
+        
+        local targetPart = target:FindFirstChild("Head") or target:FindFirstChild("HumanoidRootPart")
+        if not targetPart then return end
+        
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if not root then return end
+        
+        local distance = (targetPart.Position - root.Position).Magnitude
+        if distance <= 18 then
+            local event = tool:FindFirstChild("RemoteEvent")
+            if event then
+                event:FireServer("Swing", "Thrust")
+                event:FireServer("HitZombie", target, targetPart.Position, true, Vector3.new(0, 15, 0), "Head", Vector3.new(0, 1, 0))
+            end
+        end
+    end)
+end))
+
+-- ============= WALK SPEED =============
+local customSpeed = 16
+local tpWalkSpeed = 50
+local freezeWalkSpeed = false
+
+MainTab:CreateInput({
+    Name = "Set Speed (WalkSpeed)",
+    PlaceholderText = "Enter speed (e.g. 50)",
+    RemoveTextAfterFocusLost = true,
+    Callback = function(Value)
+        local num = tonumber(Value)
+        if num and num > 0 then
+            customSpeed = num
+            local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            if hum then
+                hum.WalkSpeed = num
+            end
+        end
+    end
+})
+
+MainTab:CreateToggle({
+    Name = "Lock Set Speed",
+    CurrentValue = false,
+    Callback = function(Value)
+        freezeWalkSpeed = Value
+        if Value then
+            addConnection(task.spawn(function()
+                while freezeWalkSpeed do
+                    pcall(function()
+                        local char = LocalPlayer.Character
+                        local hum = char and char:FindFirstChildOfClass("Humanoid")
+                        if hum and hum.WalkSpeed ~= customSpeed then
+                            hum.WalkSpeed = customSpeed
+                        end
+                    end)
+                    task.wait(0.2)
+                end
+            end))
+        end
+    end
+})
+
+-- ============= NOCLIP =============
+local noclipActive = false
+
+MainTab:CreateToggle({
+    Name = "Noclip",
+    CurrentValue = false,
+    Callback = function(value)
+        noclipActive = value
+        if value then
+            if noclipConnection then
+                noclipConnection:Disconnect()
+            end
+            noclipConnection = addConnection(RunService.Stepped:Connect(function()
+                if noclipActive then
+                    pcall(function()
+                        local char = LocalPlayer.Character
+                        if char then
+                            for _, part in pairs(char:GetDescendants()) do
+                                if part:IsA("BasePart") then
+                                    part.CanCollide = false
+                                end
+                            end
+                        end
+                    end)
+                end
+            end))
+        else
+            if noclipConnection then
+                noclipConnection:Disconnect()
+                noclipConnection = nil
+            end
+            pcall(function()
+                local char = LocalPlayer.Character
+                if char then
+                    for _, part in pairs(char:GetDescendants()) do
+                        if part:IsA("BasePart") then
+                            part.CanCollide = true
+                        end
+                    end
+                end
+            end)
+        end
+    end
+})
+
+-- ============= ANTI ZOMBIE =============
+local antiZombieActive = false
+local escapeLoopDeer
+
+local ESCAPE_DISTANCE_DEER = 15
+local ESCAPE_SPEED_DEER = 1
+
+AntiTab:CreateToggle({
+    Name = "Anti Zombie (All)",
+    CurrentValue = false,
+    Callback = function(value)
+        antiZombieActive = value
+        if value then
+            escapeLoopDeer = addConnection(RunService.RenderStepped:Connect(function()
+                if antiZombieActive then
+                    pcall(function()
+                        local char = LocalPlayer.Character
+                        if not char then return end
+                        
+                        local root = char:FindFirstChild("HumanoidRootPart")
+                        if not root then return end
+                        
+                        local zombie = getClosestZombie(ESCAPE_DISTANCE_DEER)
+                        if zombie then
+                            local targetPart = zombie:FindFirstChild("Head") or zombie:FindFirstChild("HumanoidRootPart")
+                            if targetPart then
+                                local direction = (root.Position - targetPart.Position).Unit
+                                root.CFrame = root.CFrame + direction * ESCAPE_SPEED_DEER
+                            end
+                        end
+                    end)
+                end
+            end))
+        else
+            if escapeLoopDeer then
+                escapeLoopDeer:Disconnect()
+                escapeLoopDeer = nil
+            end
+        end
+    end
+})
+
+-- ============= ESP =============
+local espToggles = {
+    Runner = false,
+    Bomber = false,
+    Igniter = false,
+    Cuirassier = false
+}
+
+local colors = {
+    Runner = Color3.fromRGB(0, 255, 0),
+    Bomber = Color3.fromRGB(0, 0, 255),
+    Igniter = Color3.fromRGB(255, 255, 0),
+    Cuirassier = Color3.fromRGB(255, 0, 0)
+}
+
+local function getZombieType(zombie)
+    if not zombie then return nil end
+    if zombie:FindFirstChild("Barrel") then return "Bomber"
+    elseif zombie:FindFirstChild("Whale Oil Lantern") then return "Igniter"
+    elseif zombie:FindFirstChild("Sword") then return "Cuirassier"
+    else
+        local hum = zombie:FindFirstChildOfClass("Humanoid")
+        if hum and hum.WalkSpeed > 16 then return "Runner" end
+    end
+    return nil
+end
+
+local function updateESP()
+    pcall(function()
+        local char = LocalPlayer.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        if not root then return end
+        
+        for _, zombie in pairs(Workspace:GetChildren()) do
+            local hrp = zombie:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                local distance = (root.Position - hrp.Position).Magnitude
+                if distance <= 40 then
+                    local zType = getZombieType(zombie)
+                    if zType and espToggles[zType] then
+                        local hl = zombie:FindFirstChild("ESP_Highlight")
+                        if not hl then
+                            hl = Instance.new("Highlight")
+                            hl.Name = "ESP_Highlight"
+                            hl.Adornee = zombie
+                            hl.FillColor = colors[zType]
+                            hl.OutlineColor = Color3.new(0, 0, 0)
+                            hl.FillTransparency = 0.3
+                            hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                            hl.Parent = zombie
+                        end
+                    elseif hl then
+                        hl:Destroy()
+                    end
+                elseif zombie:FindFirstChild("ESP_Highlight") then
+                    zombie.ESP_Highlight:Destroy()
+                end
+            end
+        end
+    end)
+end
+
+addConnection(task.spawn(function()
+    while true do
+        task.wait(0.5)
+        updateESP()
+    end
+end))
+
+local Section = EspTab:CreateSection("ESP")
+
+for zType, _ in pairs(espToggles) do
+    EspTab:CreateToggle({
+        Name = zType .. " ESP",
+        CurrentValue = false,
+        Callback = function(value)
+            espToggles[zType] = value
+        end
+    })
+end
+
+-- ============= FULLBRIGHT E NO FOG =============
+local fullBrightEnabled = false
+local noFogEnabled = false
+
+local function setupLighting()
+    local Lighting = game:GetService("Lighting")
+    
+    EspTab:CreateToggle({
+        Name = "Full Bright",
+        CurrentValue = false,
+        Callback = function(v)
+            fullBrightEnabled = v
+            if v then
+                addConnection(task.spawn(function()
+                    while fullBrightEnabled do
+                        pcall(function()
+                            Lighting.Brightness = 2
+                            Lighting.ClockTime = 14
+                            Lighting.Ambient = Color3.fromRGB(255, 255, 255)
+                        end)
+                        task.wait(0.5)
+                    end
+                end))
+            end
+        end
+    })
+    
+    EspTab:CreateToggle({
+        Name = "No Fog",
+        CurrentValue = false,
+        Callback = function(v)
+            noFogEnabled = v
+            if v then
+                addConnection(task.spawn(function()
+                    while noFogEnabled do
+                        pcall(function()
+                            Lighting.FogStart = 1e6
+                            Lighting.FogEnd = 1e6
+                            local atm = Lighting:FindFirstChild("Atmosphere")
+                            if atm then
+                                atm.Density = 0
+                            end
+                        end)
+                        task.wait(0.5)
+                    end
+                end))
+            end
+        end
+    })
+end
+
+setupLighting()
+
+-- ============= CLEANUP E SAFETY =============
+LocalPlayer.CharacterAdded:Connect(function(newChar)
+    character = newChar
+end)
+
+game:BindToClose(function()
+    cleanupConnections()
+end)
+
+Rayfield:Notify({
+    Title = "Guts & Blackpowder",
+    Content = ver,
+    Duration = 3.1,
+    Image = 99240933011775,
+})
+
+print("✅ Script loaded successfully!")
